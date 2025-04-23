@@ -1,4 +1,5 @@
 <?php
+// ADMIN DASHBOARD - admin_dashboard.php
 include '../includes/auth.php';
 include '../includes/functions.php';
 include '../includes/db.php';
@@ -8,13 +9,16 @@ if (!($_SESSION['is_admin'] ?? false)) {
     exit();
 }
 
+// Get all projects for filter dropdown
 $projects_stmt = $pdo->query("SELECT id, name FROM projects ORDER BY name");
 $projects = $projects_stmt->fetchAll();
 
+// Handle project filter
 $project_filter = isset($_GET['project_id']) ? (int)$_GET['project_id'] : null;
 $project_filter_sql = $project_filter ? "WHERE project_id = $project_filter" : "";
 $project_join_sql = "LEFT JOIN contributions ON users.id = contributions.user_id";
 
+// Total contributions
 $total_sql = "SELECT SUM(amount) as total FROM contributions";
 if ($project_filter) {
     $total_sql .= " WHERE project_id = $project_filter";
@@ -22,6 +26,7 @@ if ($project_filter) {
 $stmt = $pdo->query($total_sql);
 $total_contributions = $stmt->fetch()['total'] ?? 0;
 
+// Get contribution metrics
 $monthly_sql = "SELECT 
                 DATE_FORMAT(contributed_at, '%Y-%m') as month,
                 SUM(amount) as total 
@@ -35,6 +40,7 @@ $monthly_sql .= " GROUP BY DATE_FORMAT(contributed_at, '%Y-%m')
 $stmt_monthly = $pdo->query($monthly_sql);
 $monthly_data = $stmt_monthly->fetchAll();
 
+// Average contribution
 $avg_sql = "SELECT AVG(amount) as average FROM contributions";
 if ($project_filter) {
     $avg_sql .= " WHERE project_id = $project_filter";
@@ -42,6 +48,7 @@ if ($project_filter) {
 $stmt_avg = $pdo->query($avg_sql);
 $avg_contribution = $stmt_avg->fetch()['average'] ?? 0;
 
+// Total contributors
 $contributors_sql = "SELECT COUNT(DISTINCT user_id) as total FROM contributions";
 if ($project_filter) {
     $contributors_sql .= " WHERE project_id = $project_filter";
@@ -49,6 +56,7 @@ if ($project_filter) {
 $stmt_contributors = $pdo->query($contributors_sql);
 $total_contributors = $stmt_contributors->fetch()['total'] ?? 0;
 
+// Top 5 contributors
 $top_sql = "SELECT users.name, SUM(contributions.amount) as total 
           FROM contributions 
           JOIN users ON users.id = contributions.user_id";
@@ -61,6 +69,7 @@ $top_sql .= " GROUP BY user_id
 $stmt_top = $pdo->query($top_sql);
 $top_contributors = $stmt_top->fetchAll();
 
+// Recent contributions
 $recent_sql = "SELECT users.name, contributions.amount, contributions.contributed_at, projects.name as project_name 
            FROM contributions 
            JOIN users ON users.id = contributions.user_id
@@ -73,6 +82,7 @@ $recent_sql .= " ORDER BY contributed_at DESC
 $stmt_recent = $pdo->query($recent_sql);
 $recent_contributions = $stmt_recent->fetchAll();
 
+// Get all users and their contributions
 $tree_sql = "SELECT users.name, users.email, users.id, users.referred_by, 
            COALESCE(SUM(contributions.amount),0) as total_contribution 
            FROM users";
@@ -86,6 +96,7 @@ $tree_stmt = $pdo->query($tree_sql);
 $tree_data = $tree_stmt->fetchAll();
 $users = $tree_data;
 
+// Get active project name for display
 $active_project_name = "All Projects";
 if ($project_filter) {
     $project_name_stmt = $pdo->prepare("SELECT name FROM projects WHERE id = ?");
@@ -107,6 +118,7 @@ if ($project_filter) {
 </head>
 
 <body class="bg-gray-100 text-gray-800">
+    <!-- Header -->
     <header class="bg-indigo-700 text-white p-4 flex justify-between items-center shadow fixed w-full z-10">
         <div class="flex items-center">
             <button id="sidebar-toggle" class="mr-3 text-white md:hidden">
@@ -122,6 +134,7 @@ if ($project_filter) {
     </header>
 
     <div class="flex pt-16">
+        <!-- Sidebar -->
         <aside id="sidebar"
             class="bg-indigo-800 text-white w-64 min-h-screen fixed z-10 transition-transform duration-300 ease-in-out md:translate-x-0 transform -translate-x-full">
             <div class="p-4">
@@ -172,7 +185,9 @@ if ($project_filter) {
             </div>
         </aside>
 
+        <!-- Main Content -->
         <main class="flex-1 p-6 md:ml-64 transition-all duration-300 ease-in-out overflow-x-hidden">
+            <!-- Project Filter -->
             <div class="bg-white rounded-lg shadow p-6 mb-6">
                 <h3 class="text-xl font-semibold mb-4">Filter by Project</h3>
                 <div class="flex flex-col md:flex-row md:items-center gap-4">
@@ -210,6 +225,7 @@ if ($project_filter) {
                 <?php endif; ?>
             </div>
 
+            <!-- Overview Cards -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                 <div class="bg-white rounded-lg shadow p-6">
                     <div class="flex items-center">
@@ -262,6 +278,7 @@ if ($project_filter) {
                 </div>
             </div>
 
+            <!-- Recent Activity -->
             <div class="bg-white rounded-lg shadow p-6 mb-6">
                 <h3 class="text-xl font-semibold mb-4">Recent Contributions</h3>
                 <div class="overflow-x-auto">
@@ -290,6 +307,7 @@ if ($project_filter) {
                 </div>
             </div>
 
+            <!-- User Table -->
             <div class="bg-white rounded-lg shadow p-6 mb-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-xl font-semibold">All Users & Contributions</h3>
@@ -341,17 +359,21 @@ if ($project_filter) {
                 </div>
             </div>
 
+            <!-- Referral Tree Visualization -->
             <div class="bg-white rounded-lg shadow p-6 mb-6">
                 <h3 class="text-xl font-semibold mb-4">Referral Tree (Interactive)</h3>
                 <div id="treeChart" class="w-full h-96 bg-gray-50 rounded border overflow-auto"></div>
             </div>
 
+            <!-- Charts and Analytics -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Monthly Contribution Chart -->
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-xl font-semibold mb-4">Monthly Contributions</h3>
                     <canvas id="contributionChart" height="300"></canvas>
                 </div>
 
+                <!-- Top Contributors -->
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-xl font-semibold mb-4">Top Contributors</h3>
                     <ul class="divide-y">
@@ -366,11 +388,13 @@ if ($project_filter) {
                 </div>
             </div>
 
+            <!-- Footer -->
             <footer class="bg-indigo-700 text-white text-center py-4 mt-8">
                 <p>&copy; 2025 Church - Admin Panel</p>
             </footer>
 
             <script>
+            // Sidebar toggle functionality
             const sidebarToggle = document.getElementById('sidebar-toggle');
             const sidebar = document.getElementById('sidebar');
             const main = document.querySelector('main');
@@ -380,6 +404,7 @@ if ($project_filter) {
                 main.classList.toggle('md:ml-0');
             });
 
+            // Handle window resize
             window.addEventListener('resize', () => {
                 if (window.innerWidth >= 768) {
                     main.classList.add('md:ml-64');
@@ -390,6 +415,7 @@ if ($project_filter) {
                 }
             });
 
+            // User search functionality
             const userSearch = document.getElementById('userSearch');
             const userTable = document.getElementById('userTable');
 
@@ -403,6 +429,7 @@ if ($project_filter) {
                 });
             });
 
+            // Chart.js - Monthly Contribution Chart
             const months = [
                 <?php foreach (array_reverse($monthly_data) as $data): ?> "<?php echo date('M Y', strtotime($data['month'] . '-01')); ?>",
                 <?php endforeach; ?>
@@ -442,6 +469,7 @@ if ($project_filter) {
                 }
             });
 
+            // D3.js - Vertical Referral Tree
             const width = document.getElementById('treeChart').clientWidth;
             const height = document.getElementById('treeChart').clientHeight;
 
@@ -453,6 +481,7 @@ if ($project_filter) {
             const g = svg.append("g")
                 .attr("transform", "translate(50, 20)");
 
+            // Create tree data structure
             const treeData = {
                 name: "Organization Root",
                 children: [
@@ -462,10 +491,12 @@ if ($project_filter) {
                         value: <?php echo $user['total_contribution'] ?? 0; ?>,
                         children: [
                             <?php
+              // Get direct referrals
               $stmt2 = $pdo->prepare("SELECT name, id FROM users WHERE referred_by = ?");
               $stmt2->execute([$user['id']]);
               $refChildren = $stmt2->fetchAll();
               foreach ($refChildren as $child): 
+                // Get second-level referrals
                 $stmt3 = $pdo->prepare("SELECT name, id FROM users WHERE referred_by = ?");
                 $stmt3->execute([$child['id']]);
                 $grandChildren = $stmt3->fetchAll();
@@ -485,14 +516,17 @@ if ($project_filter) {
                 ]
             };
 
+            // Create a hierarchical layout
             const root = d3.hierarchy(treeData);
 
-
+            // Define tree layout
             const treeLayout = d3.tree()
                 .size([width - 100, height - 40]);
 
+            // Assign position to nodes
             treeLayout(root);
 
+            // Draw links between nodes
             g.selectAll(".link")
                 .data(root.links())
                 .join("path")
@@ -503,6 +537,7 @@ if ($project_filter) {
                 .attr("fill", "none")
                 .attr("stroke", "#ccc");
 
+            // Create node groups
             const node = g.selectAll(".node")
                 .data(root.descendants())
                 .join("g")
@@ -516,11 +551,12 @@ if ($project_filter) {
                     d3.select(this).select("circle").attr("r", 6);
                 });
 
-
+            // Add circles to nodes
             node.append("circle")
                 .attr("r", 6)
                 .attr("fill", d => d.depth === 0 ? "#4F46E5" : (d.data.value > 1000 ? "#10B981" : "#6366F1"));
 
+            // Add labels to nodes
             node.append("text")
                 .attr("dy", ".31em")
                 .attr("x", d => d.children ? -8 : 8)
@@ -528,6 +564,7 @@ if ($project_filter) {
                 .text(d => d.data.name)
                 .style("font-size", "12px");
 
+            // Add zoom behavior
             const zoom = d3.zoom()
                 .scaleExtent([0.5, 3])
                 .on("zoom", (event) => {

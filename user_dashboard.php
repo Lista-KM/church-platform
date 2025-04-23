@@ -1,10 +1,8 @@
 <?php
-// USER REFERRAL DASHBOARD - user_dashboard.php
 include 'includes/auth.php';
 include 'includes/functions.php';
 include 'includes/db.php';
 
-// Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
@@ -12,12 +10,10 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
-// Get user information
 $stmt = $pdo->prepare("SELECT id, name, email, referral_code FROM users WHERE id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
 
-// If user doesn't have a referral code, generate one
 if (empty($user['referral_code'])) {
     $referral_code = generate_referral_code($user['id']);
     $stmt = $pdo->prepare("UPDATE users SET referral_code = ? WHERE id = ?");
@@ -25,18 +21,15 @@ if (empty($user['referral_code'])) {
     $user['referral_code'] = $referral_code;
 }
 
-// Get all available projects for the filter dropdown
 $stmt = $pdo->prepare("SELECT id, name FROM projects ORDER BY name ASC");
 $stmt->execute();
 $projects = $stmt->fetchAll();
 
-// Handle project filter
 $project_filter = null;
 if (isset($_GET['project']) && is_numeric($_GET['project'])) {
     $project_filter = (int)$_GET['project'];
 }
 
-// Get personal contribution statistics
 $sql_personal_stats = "SELECT 
                       COUNT(*) as total_contributions,
                       SUM(amount) as total_amount,
@@ -46,7 +39,6 @@ $sql_personal_stats = "SELECT
                       FROM contributions
                       WHERE user_id = ?";
 
-// Add project filter if selected
 $params = [$user_id];
 if ($project_filter !== null) {
     $sql_personal_stats .= " AND project_id = ?";
@@ -57,7 +49,6 @@ $stmt = $pdo->prepare($sql_personal_stats);
 $stmt->execute($params);
 $personal_stats = $stmt->fetch();
 
-// Get referral statistics
 $stmt = $pdo->prepare("WITH RECURSIVE RefTree AS (
                         SELECT id, name, referred_by, 0 as level
                         FROM users 
@@ -76,14 +67,12 @@ $stmt = $pdo->prepare("WITH RECURSIVE RefTree AS (
 $stmt->execute([$user_id]);
 $referral_stats = $stmt->fetch();
 
-// Get direct referrals
 $sql_direct_referrals = "SELECT 
                       u.id, 
                       u.name, 
                       u.created_at,
                       (SELECT COUNT(*) FROM users WHERE referred_by = u.id) as their_referrals";
 
-// For contributions count and amount, respect project filter if selected
 if ($project_filter !== null) {
     $sql_direct_referrals .= ", 
                       (SELECT SUM(amount) FROM contributions WHERE user_id = u.id AND project_id = ?) as contributions,
@@ -109,7 +98,6 @@ $stmt = $pdo->prepare($sql_direct_referrals);
 $stmt->execute($params);
 $direct_referrals = $stmt->fetchAll();
 
-// Get downline contributions (all users under this user)
 $sql_downline = "WITH RECURSIVE RefTree AS (
                         SELECT id
                         FROM users 
@@ -128,7 +116,6 @@ $sql_downline = "WITH RECURSIVE RefTree AS (
                       JOIN RefTree rt ON c.user_id = rt.id
                       WHERE c.user_id != ?";
 
-// Add project filter if selected
 if ($project_filter !== null) {
     $sql_downline .= " AND c.project_id = ?";
     $params = [$user_id, $user_id, $project_filter];
@@ -140,7 +127,6 @@ $stmt = $pdo->prepare($sql_downline);
 $stmt->execute($params);
 $downline_stats = $stmt->fetch();
 
-// Get recent contributions from downline
 $sql_recent = "WITH RECURSIVE RefTree AS (
                         SELECT id
                         FROM users 
@@ -165,7 +151,6 @@ $sql_recent = "WITH RECURSIVE RefTree AS (
                       JOIN RefTree rt ON c.user_id = rt.id
                       WHERE c.user_id != ?";
 
-// Add project filter if selected
 if ($project_filter !== null) {
     $sql_recent .= " AND c.project_id = ?";
     $params = [$user_id, $user_id, $project_filter];
@@ -179,11 +164,9 @@ $stmt = $pdo->prepare($sql_recent);
 $stmt->execute($params);
 $recent_downline_contributions = $stmt->fetchAll();
 
-// Monthly data arrays are set empty as per original code
 $monthly_data = [];
 $downline_monthly_data = [];
 
-// Get referral tree data for visualization
 $stmt = $pdo->prepare("WITH RECURSIVE RefTree AS (
                         SELECT id
                         FROM users 
@@ -204,7 +187,6 @@ $stmt = $pdo->prepare("WITH RECURSIVE RefTree AS (
 $stmt->execute([$user_id, $user_id]);
 $tree_data = $stmt->fetchAll();
 
-// Create tree data for D3.js visualization
 $root = [
     'id' => $user['id'],
     'name' => $user['name'],
@@ -212,7 +194,6 @@ $root = [
     'children' => []
 ];
 
-// Build the tree structure
 $nodes_by_id = [$user['id'] => &$root];
 foreach ($tree_data as $node) {
     if ($node['id'] == $user['id']) continue;
@@ -231,20 +212,15 @@ foreach ($tree_data as $node) {
     }
 }
 
-// Convert to JSON for JavaScript
 $tree_json = json_encode($root);
 
-// Calculate base URL for referral links
 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
 $base_url = $protocol . $_SERVER['HTTP_HOST'];
 
-// If your app is in a subdirectory, uncomment and modify this line:
 $base_url .= '/church-platform';
 
-// Ensure there's no duplicate slash
 $referral_url = rtrim($base_url, '/') . '/landing.php?ref=' . urlencode($user['referral_code']);
 
-// Function to generate referral code (if not already defined in functions.php)
 function generate_referral_code($user_id) {
     $prefix = substr(str_shuffle('ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 0, 3);
     $suffix = substr(str_shuffle('0123456789'), 0, 4);
@@ -300,7 +276,6 @@ function generate_referral_code($user_id) {
         z-index: 40;
     }
 
-    /* Loading spinner */
     .spinner {
         border: 3px solid rgba(0, 0, 0, 0.1);
         border-radius: 50%;
@@ -321,7 +296,6 @@ function generate_referral_code($user_id) {
         }
     }
 
-    /* Alert toast */
     .toast {
         position: fixed;
         top: 20px;
@@ -341,7 +315,6 @@ function generate_referral_code($user_id) {
         opacity: 1;
     }
 
-    /* Mobile sidebar overlay */
     .sidebar-overlay {
         position: fixed;
         top: 0;
@@ -731,12 +704,9 @@ function generate_referral_code($user_id) {
     </div>
 
     <script>
-    // Use the existing tree data from PHP
     const treeData = <?php echo $tree_json; ?>;
 
-    // Convert flat data to hierarchy for D3.js
     function buildHierarchy(data, rootId) {
-        // Create mapping of id to node data
         const map = {};
         data.forEach(item => {
             map[item.id] = {
@@ -750,7 +720,6 @@ function generate_referral_code($user_id) {
             };
         });
 
-        // Build the tree structure
         const rootNode = map[rootId];
         data.forEach(item => {
             if (item.id !== rootId && map[item.referred_by]) {
@@ -762,48 +731,37 @@ function generate_referral_code($user_id) {
     }
 
     function renderTree() {
-        // Clear previous tree visualization
         d3.select("#treeChart").html("");
 
-        // Get dimensions of the container
         const container = document.getElementById('treeChart');
         const width = container.clientWidth;
         const height = container.clientHeight;
 
-        // Create SVG container
         const svg = d3.select("#treeChart")
             .append("svg")
             .attr("width", width)
             .attr("height", height);
 
-        // Create main group for the visualization with initial transform
         const g = svg.append("g")
             .attr("transform", "translate(50, 20)");
 
-        // Handle case when treeData might be flat or already hierarchical
         let rootNode;
         if (Array.isArray(treeData)) {
-            // If it's an array, it's flat data that needs to be converted
             rootNode = buildHierarchy(treeData, <?php echo $user_id; ?>);
         } else {
-            // If it's an object, it's already hierarchical data
             rootNode = treeData;
         }
 
-        // Create D3 hierarchy
         const root = d3.hierarchy(rootNode);
 
-        // Create tree layout - adjust size for mobile and desktop
         const treeLayout = d3.tree()
             .size([
                 width > 768 ? width - 100 : width - 40,
                 height > 400 ? height - 60 : height - 40
             ]);
 
-        // Assign positions to nodes
         treeLayout(root);
 
-        // Draw links between nodes
         g.selectAll(".link")
             .data(root.links())
             .join("path")
@@ -815,7 +773,6 @@ function generate_referral_code($user_id) {
             .attr("stroke", "#ccc")
             .attr("stroke-width", 1.5);
 
-        // Create node groups
         const node = g.selectAll(".node")
             .data(root.descendants())
             .join("g")
@@ -830,7 +787,6 @@ function generate_referral_code($user_id) {
             .on("mouseover", function(event, d) {
                 d3.select(this).select("circle").attr("r", 8);
 
-                // Show tooltip - adjust positioning for mobile
                 tooltip
                     .style("opacity", 1)
                     .html(`
@@ -851,22 +807,19 @@ function generate_referral_code($user_id) {
         node.append("circle")
             .attr("r", 6)
             .attr("fill", d => {
-                // Color based on level and contribution
-                if (d.data.id == <?php echo $user_id; ?>) return "#4F46E5"; // Current focus
+                if (d.data.id == <?php echo $user_id; ?>) return "#4F46E5";
                 if (d.data.treeContribution > 1000 || d.data.contribution > 1000)
-                    return "#10B981"; // High contribution
-                return "#6366F1"; // Default
+                    return "#10B981";
+                return "#6366F1";
             })
             .attr("stroke", "#fff")
             .attr("stroke-width", 1.5);
 
-        // Add labels to nodes - adjust for screen size
         node.append("text")
             .attr("dy", ".31em")
             .attr("x", d => d.children ? -8 : 8)
             .attr("text-anchor", d => d.children ? "end" : "start")
             .text(d => {
-                // Truncate names on small screens
                 const name = d.data.name;
                 if (width < 640 && name.length > 10) {
                     return name.substring(0, 8) + '...';
@@ -876,7 +829,6 @@ function generate_referral_code($user_id) {
             .style("font-size", width < 640 ? "10px" : "12px")
             .style("fill", "#4B5563");
 
-        // Create tooltip if it doesn't exist
         let tooltip = d3.select("body").select(".tooltip");
         if (tooltip.empty()) {
             tooltip = d3.select("body").append("div")
@@ -884,7 +836,6 @@ function generate_referral_code($user_id) {
                 .style("opacity", 0);
         }
 
-        // Add zoom behavior optimized for touch devices
         const zoom = d3.zoom()
             .scaleExtent([0.5, 3])
             .on("zoom", (event) => {
@@ -892,10 +843,9 @@ function generate_referral_code($user_id) {
             });
 
         svg.call(zoom)
-            .on("dblclick.zoom", null); // Disable double-click zoom for better mobile experience
+            .on("dblclick.zoom", null);
     }
 
-    // Initialize the tree visualization on page load
     document.addEventListener('DOMContentLoaded', function() {
         renderTree();
         setupCharts();
@@ -903,7 +853,6 @@ function generate_referral_code($user_id) {
     });
 
     function setupCharts() {
-        // Set up chart options with responsive configs
         const chartOptions = {
             responsive: true,
             maintainAspectRatio: false,
@@ -1020,23 +969,19 @@ function generate_referral_code($user_id) {
     }
 
     function setupEventListeners() {
-        // Copy referral link to clipboard
         document.getElementById('copy-link').addEventListener('click', function() {
             const referralLink = document.getElementById('referral-link');
             referralLink.select();
             document.execCommand('copy');
 
-            // Show toast notification
             const toast = document.getElementById('toast');
             toast.classList.add('show');
 
-            // Hide toast after 3 seconds
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);
         });
 
-        // Mobile sidebar toggle
         document.getElementById('sidebar-toggle').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
@@ -1045,7 +990,6 @@ function generate_referral_code($user_id) {
             overlay.classList.add('active');
         });
 
-        // Close sidebar on mobile
         document.getElementById('close-sidebar').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
@@ -1054,7 +998,6 @@ function generate_referral_code($user_id) {
             overlay.classList.remove('active');
         });
 
-        // Close sidebar when clicking overlay
         document.getElementById('sidebar-overlay').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
@@ -1063,17 +1006,14 @@ function generate_referral_code($user_id) {
             overlay.classList.remove('active');
         });
 
-        // Refresh tree visualization
         document.getElementById('refresh-tree').addEventListener('click', function() {
             const loadingIndicator = document.getElementById('loading-indicator');
             loadingIndicator.classList.remove('hidden');
 
-            // Simulate loading (in a real app, you'd fetch from the server)
             setTimeout(() => {
                 renderTree();
                 loadingIndicator.classList.add('hidden');
 
-                // Show success toast
                 const toast = document.getElementById('toast');
                 document.getElementById('toast-message').textContent = 'Referral tree updated!';
                 toast.classList.add('show');
@@ -1084,7 +1024,6 @@ function generate_referral_code($user_id) {
             }, 1500);
         });
 
-        // Handle window resize for responsive charts and tree
         let resizeTimeout;
         window.addEventListener('resize', function() {
             clearTimeout(resizeTimeout);

@@ -1,4 +1,5 @@
 <?php
+// CONTRIBUTION REPORTS - contribution_reports.php
 include '../includes/auth.php';
 include '../includes/functions.php';
 include '../includes/db.php';
@@ -8,22 +9,28 @@ if (!($_SESSION['is_admin'] ?? false)) {
     exit();
 }
 
+// Get date filters
 $start_date = $_GET['start_date'] ?? date('Y-m-d', strtotime('-6 months'));
 $end_date = $_GET['end_date'] ?? date('Y-m-d');
 
+// Get project filter
 $project_id = $_GET['project_id'] ?? 'all';
 
+// Get all projects for the dropdown
 $projects_stmt = $pdo->query("SELECT id, name FROM projects ORDER BY name");
 $projects = $projects_stmt->fetchAll();
 
+// Base WHERE clause for all queries
 $base_where = "contributed_at BETWEEN ? AND ?";
 $params = [$start_date, $end_date];
 
+// Add project filter if specified
 if ($project_id !== 'all') {
     $base_where .= " AND project_id = ?";
     $params[] = $project_id;
 }
 
+// Get contribution summary
 $stmt = $pdo->prepare("SELECT 
                       SUM(amount) as total,
                       AVG(amount) as average,
@@ -35,6 +42,7 @@ $stmt = $pdo->prepare("SELECT
 $stmt->execute($params);
 $summary = $stmt->fetch();
 
+// Get monthly trends
 $stmt_monthly = $pdo->prepare("SELECT 
                             DATE_FORMAT(contributed_at, '%Y-%m') as month,
                             SUM(amount) as total,
@@ -47,6 +55,7 @@ $stmt_monthly = $pdo->prepare("SELECT
 $stmt_monthly->execute($params);
 $monthly_data = $stmt_monthly->fetchAll();
 
+// Get day of week analysis
 $stmt_dow = $pdo->prepare("SELECT 
                           DAYNAME(contributed_at) as day_name,
                           SUM(amount) as total,
@@ -59,6 +68,7 @@ $stmt_dow = $pdo->prepare("SELECT
 $stmt_dow->execute($params);
 $day_of_week_data = $stmt_dow->fetchAll();
 
+// Get top contributors
 $stmt_top = $pdo->prepare("SELECT 
                         users.name, 
                         SUM(contributions.amount) as total,
@@ -73,6 +83,7 @@ $stmt_top = $pdo->prepare("SELECT
 $stmt_top->execute($params);
 $top_contributors = $stmt_top->fetchAll();
 
+// Get contribution size distribution
 $stmt_size = $pdo->prepare("SELECT 
                           CASE 
                             WHEN amount < 50 THEN 'Under $50'
@@ -91,9 +102,11 @@ $stmt_size = $pdo->prepare("SELECT
 $stmt_size->execute($params);
 $size_distribution = $stmt_size->fetchAll();
 
+// Get recent contributions
 $recent_params = $params;
 $recent_where = $base_where;
 
+// For recent contributions, we also need to join the projects table
 $stmt_recent = $pdo->prepare("SELECT 
                            users.name,
                            contributions.amount,
@@ -125,6 +138,7 @@ $recent_contributions = $stmt_recent->fetchAll();
 </head>
 
 <body class="bg-gray-100 text-gray-800">
+    <!-- Header -->
     <header class="bg-indigo-700 text-white p-4 flex justify-between items-center shadow fixed w-full z-10">
         <div class="flex items-center">
             <button id="sidebar-toggle" class="mr-3 text-white md:hidden">
@@ -140,6 +154,7 @@ $recent_contributions = $stmt_recent->fetchAll();
     </header>
 
     <div class="flex pt-16">
+        <!-- Sidebar -->
         <aside id="sidebar"
             class="bg-indigo-800 text-white w-64 min-h-screen fixed z-10 transition-transform duration-300 ease-in-out md:translate-x-0 transform -translate-x-full">
             <div class="p-4">
@@ -187,7 +202,9 @@ $recent_contributions = $stmt_recent->fetchAll();
             </div>
         </aside>
 
+        <!-- Main Content -->
         <main class="flex-1 p-6 md:ml-64 transition-all duration-300 ease-in-out">
+            <!-- Date & Project Filter -->
             <div class="bg-white rounded-lg shadow p-6 mb-6">
                 <h3 class="text-xl font-semibold mb-4">Filter Reports</h3>
                 <form action="" method="GET" class="flex flex-col md:flex-row md:items-end gap-4">
@@ -221,6 +238,7 @@ $recent_contributions = $stmt_recent->fetchAll();
                 </form>
             </div>
 
+            <!-- Project filter indicator -->
             <?php if($project_id !== 'all'): ?>
             <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
                 <div class="flex">
@@ -252,6 +270,7 @@ $recent_contributions = $stmt_recent->fetchAll();
             </div>
             <?php endif; ?>
 
+            <!-- Summary Cards -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <div class="bg-white rounded-lg shadow p-4">
                     <h4 class="text-gray-500 text-sm mb-1">Total Contributions</h4>
@@ -280,12 +299,15 @@ $recent_contributions = $stmt_recent->fetchAll();
                 </div>
             </div>
 
+            <!-- Charts -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Monthly Trend Chart -->
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-xl font-semibold mb-4">Monthly Contribution Trends</h3>
                     <canvas id="monthlyChart" height="300"></canvas>
                 </div>
 
+                <!-- Day of Week Chart -->
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-xl font-semibold mb-4">Contributions by Day of Week</h3>
                     <canvas id="dowChart" height="300"></canvas>
@@ -293,11 +315,13 @@ $recent_contributions = $stmt_recent->fetchAll();
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Contribution Size Distribution -->
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-xl font-semibold mb-4">Contribution Size Distribution</h3>
                     <canvas id="sizeChart" height="300"></canvas>
                 </div>
 
+                <!-- Top Contributors -->
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-xl font-semibold mb-4">Top Contributors</h3>
                     <div class="overflow-x-auto">
@@ -376,6 +400,7 @@ $recent_contributions = $stmt_recent->fetchAll();
                 </div>
             </div>
 
+            <!-- Export Options -->
             <div class="bg-white rounded-lg shadow p-6">
                 <h3 class="text-xl font-semibold mb-4">Export Reports</h3>
                 <div class="flex flex-wrap gap-4">
@@ -396,11 +421,13 @@ $recent_contributions = $stmt_recent->fetchAll();
         </main>
     </div>
 
+    <!-- Footer -->
     <footer class="bg-indigo-700 text-white text-center py-4 mt-8">
         <p>&copy; 2025 Church - Admin Panel</p>
     </footer>
 
     <script>
+    // Sidebar toggle functionality
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const sidebar = document.getElementById('sidebar');
     const main = document.querySelector('main');
@@ -410,6 +437,7 @@ $recent_contributions = $stmt_recent->fetchAll();
         main.classList.toggle('md:ml-0');
     });
 
+    // Handle window resize
     window.addEventListener('resize', () => {
         if (window.innerWidth >= 768) {
             main.classList.add('md:ml-64');
@@ -420,11 +448,13 @@ $recent_contributions = $stmt_recent->fetchAll();
         }
     });
 
+    // Initialize date pickers
     flatpickr(".datepicker", {
         dateFormat: "Y-m-d",
         allowInput: true
     });
 
+    // Monthly Chart
     const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
     const monthlyChart = new Chart(monthlyCtx, {
         type: 'line',
@@ -489,6 +519,7 @@ $recent_contributions = $stmt_recent->fetchAll();
         }
     });
 
+    // Day of Week Chart
     const dowCtx = document.getElementById('dowChart').getContext('2d');
     const dowChart = new Chart(dowCtx, {
         type: 'bar',
@@ -522,6 +553,7 @@ $recent_contributions = $stmt_recent->fetchAll();
         }
     });
 
+    // Contribution Size Distribution Chart
     const sizeCtx = document.getElementById('sizeChart').getContext('2d');
     const sizeChart = new Chart(sizeCtx, {
         type: 'pie',

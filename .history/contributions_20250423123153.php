@@ -1,7 +1,9 @@
 <?php
+// Error reporting for debugging
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
+// Include files with error checking
 $include_files = ['includes/auth.php', 'includes/functions.php', 'includes/db.php'];
 foreach ($include_files as $file) {
     if (!file_exists($file)) {
@@ -10,6 +12,7 @@ foreach ($include_files as $file) {
     include_once $file;
 }
 
+// Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
@@ -17,6 +20,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
+// Error handling function
 function handleDatabaseError($stmt, $error_message) {
     if ($stmt === false) {
         die("Database Error: $error_message - " . $GLOBALS['pdo']->errorInfo()[2]);
@@ -24,6 +28,7 @@ function handleDatabaseError($stmt, $error_message) {
 }
 
 try {
+    // Get user information with error handling
     $stmt = $pdo->prepare("SELECT id, name, email, referral_code FROM users WHERE id = ?");
     handleDatabaseError($stmt, "Failed to prepare user query");
     
@@ -35,7 +40,9 @@ try {
         die("Error: User not found.");
     }
 
+    // Generate referral code if not exists
     if (empty($user['referral_code'])) {
+        // Ensure the function exists
         if (!function_exists('generateReferralCode')) {
             function generateReferralCode($length = 8) {
                 $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -61,6 +68,7 @@ try {
     $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : 'localhost';
     $referral_link = "$protocol://$host/register.php?ref=" . $user['referral_code'];
 
+    // Simplified downline users query
     $stmt = $pdo->prepare("
         WITH RECURSIVE RefTree AS (
             SELECT id, name, referred_by, 0 as level
@@ -170,6 +178,7 @@ try {
     $total_records = $stmt->fetchColumn();
     $total_pages = ceil($total_records / $per_page);
 
+    // Get contributions with pagination using parameterized query
     $contributions_sql = "
         WITH RECURSIVE RefTree AS (
             SELECT id, name, referred_by FROM users WHERE id = :user_id
@@ -258,6 +267,7 @@ try {
     
     $summary = $stmt->fetch(PDO::FETCH_ASSOC);
 
+    // Get user's personal contribution total - properly include project filter
     $personal_sql = "SELECT COALESCE(SUM(amount), 0) as personal_total FROM contributions WHERE user_id = :user_id";
     $personal_params = ['user_id' => $user_id];
     
@@ -266,8 +276,9 @@ try {
         $personal_params['filter_project'] = $filter_project;
     }
     
+    // Add date filter to personal contributions to be consistent with other queries
     if (!empty($date_filter)) {
-        $date_filter_personal = str_replace('c.', '', $date_filter); 
+        $date_filter_personal = str_replace('c.', '', $date_filter); // Remove the 'c.' table alias
         $personal_sql .= " " . $date_filter_personal;
     }
     
@@ -279,8 +290,10 @@ try {
     
     $personal_contribution = $stmt->fetchColumn();
 
+    // Get combined total (personal + downline)
     $combined_total = ($personal_contribution ?? 0) + ($summary['total_amount'] ?? 0);
 
+    // Get contribution by level data with safer parameter binding
     $level_sql = "
         WITH RECURSIVE RefTree AS (
             SELECT id, name, referred_by, 0 as level
@@ -324,6 +337,7 @@ try {
     
     $level_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Get top contributors with safer parameter binding
     $top_sql = "
         WITH RECURSIVE RefTree AS (
             SELECT id FROM users WHERE id = :user_id
@@ -359,6 +373,7 @@ try {
     
     $top_contributors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // FIXED: Get daily contribution data with corrected LEFT JOIN and WHERE clause structure
     $daily_sql = "
     WITH RECURSIVE RefTree AS (
         SELECT id FROM users WHERE id = :user_id
@@ -400,6 +415,7 @@ try {
     
     $daily_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Get project distribution data with safer parameter binding
     $project_sql = "
         WITH RECURSIVE RefTree AS (
             SELECT id FROM users WHERE id = :user_id
@@ -455,6 +471,7 @@ try {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+    /* For the vertical tree view */
     .tree {
         --spacing: 1.5rem;
         --radius: 10px;
@@ -529,6 +546,7 @@ try {
         border-color: #4338ca;
     }
 
+    /* Tooltip styles */
     .tooltip {
         position: relative;
         display: inline-block;
@@ -571,6 +589,7 @@ try {
 </head>
 
 <body class="bg-gray-100 text-gray-800">
+    <!-- Header -->
     <header class="bg-indigo-700 text-white p-4 flex justify-between items-center shadow fixed w-full z-10">
         <div class="flex items-center">
             <button id="sidebar-toggle" class="mr-3 text-white md:hidden">
@@ -621,11 +640,13 @@ try {
             </div>
         </aside>
 
+        <!-- Main Content -->
         <main class="flex-1 md:ml-64 p-6">
             <div class="mb-8">
                 <h2 class="text-2xl font-bold mb-6">Downline Contribution Analytics</h2>
 
 
+                <!-- Project Filter -->
                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-md mb-6">
                     <form action="" method="get" class="flex flex-col md:flex-row md:items-center">
                         <div class="flex-grow mb-3 md:mb-0 md:mr-4">
@@ -722,7 +743,9 @@ try {
                     </div>
                 </div>
 
+                <!-- Charts Section -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <!-- Contribution Trend Chart -->
                     <div class="bg-white p-4 rounded-lg shadow-md">
                         <h3 class="text-lg font-semibold mb-4">Contribution Trend (Last 30 Days)</h3>
                         <div>
@@ -730,6 +753,7 @@ try {
                         </div>
                     </div>
 
+                    <!-- Contribution by Level Chart -->
                     <div class="bg-white p-4 rounded-lg shadow-md">
                         <h3 class="text-lg font-semibold mb-4">Contributions by Referral Level</h3>
                         <div>
@@ -738,6 +762,7 @@ try {
                     </div>
                 </div>
 
+                <!-- Project Distribution Chart -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h3 class="text-lg font-semibold mb-4">Project Distribution</h3>
                     <?php if (empty($project_distribution)): ?>
@@ -790,6 +815,7 @@ try {
                     <?php endif; ?>
                 </div>
 
+                <!-- Top Contributors -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h3 class="text-lg font-semibold mb-4">Top Contributors</h3>
                     <?php if (empty($top_contributors)): ?>
@@ -840,6 +866,7 @@ try {
                     <?php endif; ?>
                 </div>
 
+                <!-- Recent Contributions with Pagination -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h3 class="text-lg font-semibold mb-4">Recent Contributions</h3>
                     <?php if (empty($contributions)): ?>
@@ -889,6 +916,7 @@ try {
 
                     </div>
 
+                    <!-- Pagination -->
                     <?php if ($total_pages > 1): ?>
                     <div class="mt-6 flex justify-center">
                         <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
@@ -934,6 +962,7 @@ try {
                     <?php endif; ?>
                     <?php endif; ?>
                 </div>
+                <!-- Referral Section -->
                 <div class="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h3 class="text-lg font-semibold mb-4">My Referral Link</h3>
                     <div class="flex flex-col md:flex-row items-start md:items-center gap-4">
@@ -993,23 +1022,28 @@ try {
     </div>
 
     <script>
+    // Toggle sidebar on mobile
     document.getElementById('sidebar-toggle').addEventListener('click', function() {
         const sidebar = document.getElementById('sidebar');
         sidebar.classList.toggle('-translate-x-full');
     });
 
+    // Copy referral link functionality
     document.getElementById('copy-link').addEventListener('click', function() {
         const referralLink = document.getElementById('referral-link');
         referralLink.select();
         document.execCommand('copy');
 
+        // Show feedback
         this.innerHTML = '<i class="fas fa-check"></i>';
         setTimeout(() => {
             this.innerHTML = '<i class="fas fa-copy"></i>';
         }, 2000);
     });
 
+    // Initialize charts
     document.addEventListener('DOMContentLoaded', function() {
+        // Chart color scheme
         const colors = {
             primary: '#4f46e5',
             secondary: '#60a5fa',
@@ -1019,6 +1053,7 @@ try {
             dark: '#374151'
         };
 
+        // Contribution Trend Chart
         const trendCtx = document.getElementById('contributionTrendChart').getContext('2d');
         const trendChart = new Chart(trendCtx, {
             type: 'line',
@@ -1066,6 +1101,7 @@ try {
             }
         });
 
+        // Contribution by Level Chart
         const levelCtx = document.getElementById('contributionLevelChart').getContext('2d');
         const levelChart = new Chart(levelCtx, {
             type: 'bar',
@@ -1121,6 +1157,7 @@ try {
             }
         });
 
+        // Project Distribution Chart
         <?php if (!empty($project_distribution)): ?>
         const projectCtx = document.getElementById('projectDistributionChart').getContext('2d');
         const projectChart = new Chart(projectCtx, {
